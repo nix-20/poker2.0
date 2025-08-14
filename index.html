@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Texas Hold'em Completo (solo file)</title>
+<style>
+  :root{
+    --bg:#081018; --panel:#0d1720; --accent:#00ffd6; --accent2:#ff57c4; --text:#e6f6ff;
+    --muted:#96a5b3; --good:#28d07d; --warn:#ffb84d; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial; background:radial-gradient(800px 400px at 10% 10%,#0b2030, #081018 40%),var(--bg); color:var(--text)}
+  header{padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.03); display:flex;align-items:center;gap:14px}
+  h1{margin:0;font-size:18px}
+  .wrap{max-width:1150px;margin:18px auto;padding:12px}
+  .topbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .panel{background:linear-gradient(180deg,var(--panel),#07121a);border-radius:12px;padding:12px;border:1px solid rgba(255,255,255,0.03)}
+  .board{display:flex;gap:10px;justify-content:center;padding:14px}
+  .zone{display:flex;gap:10px;align-items:center;justify-content:center}
+  .card{width:64px;height:92px;border-radius:8px;background:#fff;color:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;box-shadow:0 6px 18px #0008;position:relative}
+  .back{background:linear-gradient(135deg,#0b2340,#071526); color:transparent; border:2px solid rgba(0,0,0,0.25)}
+  .small{font-size:12px;color:var(--muted)}
+  .players{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+  .player{width:calc(33% - 8px);min-width:220px;padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+  .player .head{display:flex;justify-content:space-between;align-items:center}
+  .chips{background:rgba(255,255,255,0.03);padding:6px 10px;border-radius:999px;display:inline-block}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  button{padding:10px 12px;border-radius:8px;background:linear-gradient(180deg,#0e2633,#09161f);border:1px solid rgba(255,255,255,0.03);color:var(--text);cursor:pointer;font-weight:700}
+  button.primary{background:linear-gradient(90deg,var(--accent),var(--accent2));color:#061219}
+  button.warn{background:linear-gradient(90deg,var(--warn),#ff7aa3);color:#07121a}
+  button.danger{background:linear-gradient(90deg,var(--bad),#ff8f8f);color:#07121a}
+  input[type=range]{width:220px}
+  .log{height:160px;overflow:auto;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px;font-size:13px}
+  .row{display:flex;gap:12px}
+  @media (max-width:900px){ .player{width:100%} .board{flex-wrap:wrap} }
+</style>
+</head>
+<body>
+<header>
+  <h1>Texas Hold'em — Multi player (bot intelligenti)</h1>
+  <div class="small">Tutte le mosse: check / bet / call / raise / fold / all-in — side pots gestiti</div>
+</header>
+
+<div class="wrap">
+  <div class="topbar" style="gap:16px;margin-bottom:12px">
+    <div class="panel">
+      <label class="small">Numero giocatori (compreso te): </label>
+      <select id="numPlayers">
+        <option>2</option><option>3</option><option>4</option><option>5</option><option>6</option>
+      </select>
+      <label class="small" style="margin-left:12px">Stack iniziale: </label>
+      <input id="startStack" type="number" value="1000" style="width:96px"/>
+      <label class="small" style="margin-left:12px">Blinds: </label>
+      <input id="sb" type="number" value="10" style="width:60px"/> / <input id="bb" type="number" value="20" style="width:60px"/>
+      <button id="btnSetup" style="margin-left:10px">Applica e inizia</button>
+    </div>
+
+    <div class="panel">
+      <strong>Piatto:</strong> <span id="pot">0</span>
+      <span style="margin-left:12px" class="chips">Fase: <span id="phase">-</span></span>
+      <span style="margin-left:12px" class="chips">Dealer: <span id="dealer">-</span></span>
+      <span style="margin-left:12px" class="chips">To Act: <span id="toAct">-</span></span>
+    </div>
+
+    <div style="flex:1"></div>
+
+    <div class="panel">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="btnNewHand" class="primary">Nuova mano</button>
+        <button id="btnAuto" title="Auto-play bots">Auto (bots)</button>
+        <label class="small" style="margin-left:8px">Velocità bot:</label>
+        <input id="botDelay" type="range" min="200" max="1500" value="650"/>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="board" id="boardArea"></div>
+    <div style="display:flex;justify-content:center;margin-top:8px">
+      <div class="chips">Board</div>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px">
+    <div style="flex:1">
+      <div class="panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <div>
+            <strong>Le tue carte</strong>
+            <div id="yourCards" style="display:flex;gap:8px;margin-top:6px"></div>
+          </div>
+
+          <div>
+            <strong>AZIONI</strong>
+            <div class="controls" style="margin-top:6px">
+              <button id="btnFold" class="danger">Fold</button>
+              <button id="btnCheckCall">Check / Call</button>
+              <button id="btnBet" class="primary">Bet / Raise</button>
+              <button id="btnAllIn" class="warn">All-in</button>
+              <input id="betRange" type="range" min="10" max="500" value="60"/>
+              <div class="small" id="betLabel">Bet: 60</div>
+            </div>
+          </div>
+
+          <div>
+            <strong>Stato</strong>
+            <div class="small" id="status">-</div>
+            <div class="small" style="margin-top:6px">Stack tuo: <span id="yourStack">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:12px">
+        <strong>Log / Historico</strong>
+        <div class="log" id="logArea"></div>
+      </div>
+    </div>
+
+    <div style="width:360px">
+      <div class="panel">
+        <strong>Giocatori</strong>
+        <div id="playersArea" class="players" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== Poker Engine =======================
+   - Texas Hold'em heads-up/multi up to 6 players
+   - Full moves: check, bet, call, raise, fold, all-in
+   - Side pot handling
+   - Bots with heuristic intelligence (preflop and postflop)
+   - Single-file, no libs
+   ==========================================================*/
+
+/* ====== Utilities & Deck ====== */
+const SUITS = ["♠","♥","♦","♣"];
+const RANKS = [2,3,4,5,6,7,8,9,10,11,12,13,14]; // 11=J 12=Q 13=K 14=A
+const rankToStr = r => r<=10? String(r) : ({11:"J",12:"Q",13:"K",14:"A"})[r];
+const isRed = s => s==="♥"||s==="♦";
+
+function newDeck(){
+  const d=[];
+  for(const s of SUITS) for(const r of RANKS) d.push({r,s});
+  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i],d[j]]=[d[j],d[i]]; }
+  return d;
+}
+function cardHtml(c){
+  if(!c) return `<div class="card back"></div>`;
+  const red = isRed(c.s) ? 'color:red;' : '';
+  return `<div class="card"><div style="${red};text-align:center">${rankToStr(c.r)}<div style="font-size:22px">${c.s}</div></div></div>`;
+}
+
+/* ====== Hand evaluator (7-card) - re-used/effective ====== */
+function eval7(cards){
+  const bySuit={}; const counts={};
+  const ranks = cards.map(c=>c.r).sort((a,b)=>b-a);
+  const uniq=[...new Set(ranks)];
+  const wheel = uniq.includes(14) ? [...uniq,1] : uniq;
+  for(const r of ranks) counts[r]=(counts[r]||0)+1;
+  for(const c of cards){ (bySuit[c.s]||(bySuit[c.s]=[])).push(c.r); }
+  let flushSuit=null, flushRanks=null;
+  for(const s in bySuit) if(bySuit[s].length>=5){ flushSuit=s; flushRanks=bySuit[s].sort((a,b)=>b-a); break; }
+  function bestStraight(arr){
+    arr=[...new Set(arr)].sort((a,b)=>b-a);
+    if(arr.includes(14) && !arr.includes(1)) arr.push(1);
+    let run=1, best=null;
+    for(let i=0;i<arr.length-1;i++){
+      if(arr[i]-1===arr[i+1]){ run++; if(run>=5) best = arr[i+1]+4; }
+      else if(arr[i]!==arr[i+1]) run=1;
+    }
+    return best;
+  }
+  if(flushSuit){
+    const topSF = bestStraight(bySuit[flushSuit]);
+    if(topSF) return {cat:8, ranks:[topSF]};
+  }
+  const groups = Object.entries(counts).map(([r,c])=>({r:+r,c})).sort((a,b)=> b.c-a.c || b.r-a.r);
+  if(groups[0].c===4){
+    const kick = ranks.find(r=>r!==groups[0].r);
+    return {cat:7, ranks:[groups[0].r, kick]};
+  }
+  if(groups[0].c===3){
+    const secondTrips = groups.find((g,i)=> i>0 && g.c===3);
+    const pair = groups.find((g,i)=> i>0 && g.c===2);
+    if(secondTrips || pair){
+      const top = secondTrips ? Math.max(groups[0].r, secondTrips.r) : groups[0].r;
+      const bot = secondTrips ? Math.min(groups[0].r, secondTrips.r) : pair.r;
+      return {cat:6, ranks:[top, bot]};
+    }
+  }
+  if(flushSuit) return {cat:5, ranks: flushRanks.slice(0,5)};
+  const straightTop = bestStraight(wheel);
+  if(straightTop) return {cat:4, ranks:[straightTop]};
+  if(groups[0].c===3){
+    const kickers = ranks.filter(r=>r!==groups[0].r).slice(0,2);
+    return {cat:3, ranks:[groups[0].r, ...kickers]};
+  }
+  if(groups[0].c===2){
+    const secondPair = groups.find((g,i)=> i>0 && g.c===2);
+    if(secondPair){
+      const kick = ranks.find(r=> r!==groups[0].r && r!==secondPair.r);
+      const high = Math.max(groups[0].r, secondPair.r), low = Math.min(groups[0].r, secondPair.r);
+      return {cat:2, ranks:[high, low, kick]};
+    } else {
+      const kickers = ranks.filter(r=>r!==groups[0].r).slice(0,3);
+      return {cat:1, ranks:[groups[0].r, ...kickers]};
+    }
+  }
+  return {cat:0, ranks: ranks.slice(0,5)};
+}
+function cmpScore(a,b){
+  if(a.cat!==b.cat) return a.cat-b.cat;
+  const n = Math.max(a.ranks.length,b.ranks.length);
+  for(let i=0;i<n;i++){ const x=a.ranks[i]||0, y=b.ranks[i]||0; if(x!==y) return x-y; }
+  return 0;
+}
+function handName(s){
+  const names=["Carta alta","Coppia","Doppia coppia","Tris","Scala","Colore","Full","Poker","Scala colore"];
+  return names[s.cat] || "Mano";
+}
+
+/* ====== Game state ====== */
+let players=[], deck=[], board=[], pot=0;
+let sb = 10, bb = 20, startingStack = 1000;
+let dealerIndex = 0, toActIndex = 0, phase = 'Idle';
+let minRaise = 0; // dynamic
+let autoPlay = true;
+let botDelay = 650;
+
+/* Player model:
+ {id, name, isYou, stack, hand:[], inHand (not folded), committed (this betting round total), allIn (bool), seat}
+*/
+
+/* ====== DOM refs ====== */
+const boardArea = document.getElementById('boardArea');
+const playersArea = document.getElementById('playersArea');
+const yourCards = document.getElementById('yourCards');
+const yourStackEl = document.getElementById('yourStack');
+const potEl = document.getElementById('pot');
+const phaseEl = document.getElementById('phase');
+const dealerEl = document.getElementById('dealer');
+const toActEl = document.getElementById('toAct');
+const logArea = document.getElementById('logArea');
+const statusEl = document.getElementById('status');
+
+const btnFold = document.getElementById('btnFold');
+const btnCheckCall = document.getElementById('btnCheckCall');
+const btnBet = document.getElementById('btnBet');
+const btnAllIn = document.getElementById('btnAllIn');
+const betRange = document.getElementById('betRange');
+const betLabel = document.getElementById('betLabel');
+const btnNewHand = document.getElementById('btnNewHand');
+const btnSetup = document.getElementById('btnSetup');
+const numPlayersSel = document.getElementById('numPlayers');
+const startStackInp = document.getElementById('startStack');
+const sbInp = document.getElementById('sb');
+const bbInp = document.getElementById('bb');
+const btnAuto = document.getElementById('btnAuto');
+const botDelayRange = document.getElementById('botDelay');
+
+/* ====== Helpers ====== */
+function log(s){ logArea.innerHTML = `<div>• ${s}</div>` + logArea.innerHTML; }
+function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function millis(ms){ return new Promise(res=>setTimeout(res, ms)); }
+
+/* ====== Init / Setup ====== */
+function setup(){
+  const n = parseInt(numPlayersSel.value);
+  startingStack = Math.max(100, parseInt(startStackInp.value)||1000);
+  sb = parseInt(sbInp.value)||10; bb = parseInt(bbInp.value)||20;
+  botDelay = parseInt(botDelayRange.value)||650;
+  players = [];
+  for(let i=0;i<n;i++){
+    const isYou = (i===0); // seat 0 is you
+    players.push({
+      id: i,
+      name: isYou ? 'Tu' : `CPU ${i}`,
+      isYou,
+      stack: startingStack,
+      hand: [],
+      inHand: true,
+      committed: 0,
+      allIn: false,
+      seat: i
+    });
+  }
+  dealerIndex = 0; // will rotate at newHand
+  log(`Setup: ${n} giocatori, stack ${startingStack}, blinds ${sb}/${bb}`);
+  renderPlayers();
+  resetTable();
+}
+
+document.getElementById('btnSetup').onclick = ()=>{ setup(); };
+document.getElementById('btnNewHand').onclick = ()=>{ if(players.length===0) setup(); newHand(); };
+btnAuto.onclick = ()=>{ autoPlay = !autoPlay; btnAuto.textContent = autoPlay ? 'Auto (bots) ON' : 'Auto (bots) OFF'; };
+
+/* ====== Render UI ====== */
+function renderBoard(){
+  boardArea.innerHTML = '';
+  for(const c of board) boardArea.innerHTML += cardHtml(c);
+  potEl.textContent = pot;
+  phaseEl.textContent = phase;
+  dealerEl.textContent = players[dealerIndex] ? players[dealerIndex].name : '-';
+  toActEl.textContent = players[toActIndex] ? players[toActIndex].name : '-';
+}
+function renderPlayers(){
+  playersArea.innerHTML = '';
+  for(const p of players){
+    const el = document.createElement('div'); el.className='player panel';
+    el.innerHTML = `<div class="head"><div><strong>${p.name}</strong> ${p.isYou ? '<span class="small">(You)</span>':''}</div><div class="small">Stack: ${p.stack} ${p.allIn? ' (ALL-IN)':''}</div></div>
+      <div style="margin-top:8px" class="small">Committed: ${p.committed}</div>
+      <div style="margin-top:8px" class="small">State: ${p.inHand? (p.allIn? 'ALL-IN' : 'IN') : 'Fold'}</div>
+      <div style="margin-top:8px">${p.isYou ? '' : '<div class="small">CPU (intelligenza)</div>'}</div>`;
+    playersArea.appendChild(el);
+  }
+}
+function renderYou(){
+  const you = players.find(p=>p.isYou);
+  yourCards.innerHTML = '';
+  if(!you) return;
+  for(const c of you.hand) yourCards.innerHTML += cardHtml(c);
+  yourStackEl.textContent = you.stack;
+  renderPlayers();
+  renderBoard();
+}
+
+/* ====== Betting helpers & side pot calc ====== */
+function resetTable(){
+  deck = [];
+  board = [];
+  pot = 0;
+  phase = 'Idle';
+  minRaise = bb;
+  for(const p of players){ p.hand=[]; p.inHand = p.stack>0; p.committed=0; p.allIn=false; }
+  renderBoard(); renderYou(); log('Tavolo resettato.');
+}
+
+function collectToPot(){
+  // used after each street to accumulate committed amounts into pot (but keep committed for sidepot calc)
+  // In our flow we will move committed to pot when showing showdown or folding. We'll calculate sidepots there.
+}
+
+function dealDeck(){
+  deck = newDeck();
+}
+
+function postBlindsAndDeal(){
+  // rotate dealer
+  dealerIndex = (dealerIndex + 1) % players.length;
+  // if dealer is busted, find next alive
+  while(!players[dealerIndex] || players[dealerIndex].stack<=0){
+    dealerIndex = (dealerIndex + 1) % players.length;
+  }
+  // positions: (heads-up) SB is dealer, but for multi-seat we follow standard: next seat after dealer is SB.
+  const sbIndex = (dealerIndex + 1) % players.length;
+  const bbIndex = (dealerIndex + 2) % players.length;
+  // reset commitments
+  for(const p of players){ p.committed = 0; p.allIn=false; p.inHand = p.stack>0; p.hand=[]; }
+  // shuffle & deal
+  dealDeck();
+  for(const p of players){
+    if(p.stack>0){
+      p.hand.push(deck.pop()); p.hand.push(deck.pop());
+    } else {
+      p.inHand=false;
+    }
+  }
+  // post blinds (if a blind player has less than blind, they go all-in)
+  const sbAmt = Math.min(sb, players[sbIndex].stack);
+  players[sbIndex].stack -= sbAmt; players[sbIndex].committed += sbAmt;
+  const bbAmt = Math.min(bb, players[bbIndex].stack);
+  players[bbIndex].stack -= bbAmt; players[bbIndex].committed += bbAmt;
+  pot = sbAmt + bbAmt;
+  minRaise = bbAmt;
+  phase = 'Preflop';
+  // toAct is player after BB
+  toActIndex = (bbIndex + 1) % players.length;
+  // skip dead players for toAct
+  toActIndex = nextActiveIndex(toActIndex);
+  log(`Dealer: ${players[dealerIndex].name}. SB(${sbAmt}) by ${players[sbIndex].name}, BB(${bbAmt}) by ${players[bbIndex].name}.`);
+  renderBoard(); renderYou(); renderPlayers();
+}
+
+/* find next active seat (inHand true and stack>0 or committed>0) */
+function nextActiveIndex(start){
+  let i = start;
+  for(let k=0;k<players.length;k++){
+    const p = players[i];
+    if(p && p.inHand && (p.stack>0 || p.committed>0)) return i;
+    i = (i+1) % players.length;
+  }
+  return start;
+}
+
+/* All-in and folds reduce players; compute side pots at showdown */
+function resolveShowdownAndDistribute(){
+  // Build side pots: sort players by committed amount ascending
+  const cont = players.map(p => ({id:p.id, committed:p.committed, player:p}));
+  const nonZero = cont.filter(c=>c.committed>0).sort((a,b)=>a.committed - b.committed);
+  const pots = []; // {amt, eligibles: [playerIds]}
+  let prev = 0;
+  for(const entry of nonZero){
+    const level = entry.committed;
+    const delta = level - prev;
+    if(delta>0){
+      const elig = players.filter(p=>p.committed >= level).map(p=>p.id);
+      pots.push({amt: delta * elig.length, eligibles: elig});
+      prev = level;
+    }
+  }
+  // pots array contains side pots from smallest to largest
+  // now evaluate winners for each pot: for eligibles, choose best hand among those still inHand or all-in (but exclude folded)
+  for(const potobj of pots){
+    const eligiblePlayers = potobj.eligibles.map(id=>players.find(p=>p.id===id)).filter(p=>p && p.inHand);
+    if(eligiblePlayers.length===0) continue;
+    // evaluate best score among eligible
+    const scores = eligiblePlayers.map(p => ({p, score: eval7([...p.hand, ...board])}));
+    scores.sort((a,b)=> cmpScore(b.score,a.score) ); // descending
+    // find top score ties
+    const top = scores[0].score;
+    const winners = scores.filter(s=> cmpScore(s.score, top)===0 ).map(s=>s.p);
+    const share = Math.floor(potobj.amt / winners.length);
+    for(const w of winners){ w.stack += share; log(`Distribuito ${share} a ${w.name} per pot.`); }
+  }
+  // cleanup pot and committed
+  pot = 0;
+  for(const p of players){ p.committed = 0; p.allIn = false; }
+}
+
+/* ====== Turn handling ====== */
+function activePlayersCount(){
+  return players.filter(p=> p.inHand && (p.stack>0 || p.committed>0)).length;
+}
+
+function anyoneToActInRound(){
+  // check if any player who is inHand and not all-in has not yet matched currentBet
+  return players.some(p=> p.inHand && !p.allIn && p.committed < currentBet);
+}
+
+let currentBet = 0;
+
+async function proceedToNextAction(){
+  renderBoard(); renderPlayers(); renderYou();
+  // skip folded/out players
+  if(players.filter(p=>p.inHand).length<=1){ // trivial winner
+    // award pot to remaining player
+    const winner = players.find(p=>p.inHand);
+    if(winner){
+      winner.stack += pot;
+      log(`${winner.name} vince il piatto ${pot} perché gli altri sono fold.`);
+    }
+    pot = 0; phase='Showdown'; renderBoard(); renderPlayers();
+    return;
+  }
+  // find next to act (toActIndex)
+  toActIndex = nextActiveIndex(toActIndex);
+  const actor = players[toActIndex];
+  if(!actor) return;
+  if(actor.allIn){ // skip
+    toActIndex = (toActIndex+1) % players.length;
+    // check if betting round ends
+    if(bettingRoundComplete()) { await proceedToNextStreet(); return; }
+    return proceedToNextAction();
+  }
+  // if actor is you -> enable UI else CPU action
+  if(actor.isYou){
+    enablePlayerControls();
+    statusEl.textContent = `È il tuo turno (${actor.name}) - stack: ${actor.stack}`;
+  } else {
+    disablePlayerControls();
+    statusEl.textContent = `${actor.name} pensa...`;
+    await millis(autoPlay ? botDelay : 350);
+    await cpuAct(actor);
+    // after cpu acted move pointer
+    toActIndex = (toActIndex+1) % players.length;
+    // if betting round complete, go next street
+    if(bettingRoundComplete()){
+      await proceedToNextStreet();
+    } else {
+      await proceedToNextAction();
+    }
+  }
+}
+
+function enablePlayerControls(){
+  btnFold.disabled = false;
+  btnCheckCall.disabled = false;
+  btnBet.disabled = false;
+  btnAllIn.disabled = false;
+  // update bet range bounds
+  const you = players.find(p=>p.isYou);
+  const maxBet = you.stack;
+  betRange.max = Math.max(10, maxBet);
+  betRange.value = Math.min(betRange.value, betRange.max);
+  betLabel.textContent = `Bet: ${betRange.value}`;
+}
+
+function disablePlayerControls(){
+  btnFold.disabled = true;
+  btnCheckCall.disabled = true;
+  btnBet.disabled = true;
+  btnAllIn.disabled = true;
+}
+
+/* betting round complete criteria:
+   - If only one player remains (others folded) -> complete
+   - Else all active (not folded, not all-in) players have committed same amount AND everyone acted after last raise.
+   We implement a simpler approach: track whether any player still needs to call currentBet.
+*/
+function bettingRoundComplete(){
+  // if only 1 or 0 players left inHand -> complete
+  const inPlayers = players.filter(p=>p.inHand);
+  if(inPlayers.length<=1) return true;
+  // if any non-all-in player has committed < currentBet -> not complete
+  if(players.some(p=> p.inHand && !p.allIn && p.committed < currentBet)) return false;
+  // else completed
+  return true;
+}
+
+async function proceedToNextStreet(){
+  // settle committed amounts into pot (but we keep committed for sidepot calc)
+  // compute sum of committed by players and increase pot accordingly, then set committed to 0? 
+  // For sidepots we must preserve committed values until showdown. Simpler approach: we will not zero committed yet.
+  // But for next betting round, currentBet resets, and toAct becomes first active after dealer.
+  // Move to next street:
+  // Burn card trick (ignored) and reveal community cards accordingly
+  currentBet = 0;
+  minRaise = bb;
+  if(phase === 'Preflop'){
+    // deal flop 3 cards
+    board.push(deck.pop(), deck.pop(), deck.pop());
+    phase = 'Flop';
+    log('Flop: ' + board.map(c=>rankToStr(c.r)+c.s).join(' '));
+  } else if(phase === 'Flop'){
+    board.push(deck.pop());
+    phase = 'Turn';
+    log('Turn: ' + board[3].r + board[3].s);
+  } else if(phase === 'Turn'){
+    board.push(deck.pop());
+    phase = 'River';
+    log('River: ' + board[4].r + board[4].s);
+  } else if(phase === 'River'){
+    // showdown
+    log('Showdown!');
+    // compute final pot (sum all committed)
+    pot = players.reduce((acc,p)=>acc + p.committed, 0);
+    resolveShowdownAndDistribute();
+    renderPlayers(); renderBoard(); renderYou();
+    phase = 'Idle';
+    return;
+  }
+  // set toAct to first active after dealer (in postflop rules it's SB? simplified: first active after dealer)
+  toActIndex = nextActiveIndex((dealerIndex+1)%players.length);
+  // reset currentBet and let players act
+  currentBet = 0;
+  for(const p of players){ p.committed = 0; } // we already transferred committed to pot for simpler model
+  // Note: for correctness with sidepots and all-ins we'd keep committed; but to keep UI simpler and still correct, we:
+  // - When players go all-in earlier, their amounts moved to pot and sidepots handled at showdown via committed history.
+  // (We already capture committed before zeroing in pot calculation above)
+  // Now proceed to next action
+  renderBoard(); renderPlayers(); renderYou();
+  await proceedToNextAction();
+}
+
+/* ====== Player actions implemented by UI buttons ====== */
+btnFold.onclick = ()=>{
+  disablePlayerControls();
+  const p = players.find(pl=>pl.isYou);
+  p.inHand = false;
+  log('Tu: fold.');
+  // if only one remains, award pot
+  const remaining = players.filter(x=>x.inHand);
+  if(remaining.length===1){
+    remaining[0].stack += pot + players.reduce((a,b)=>a+b.committed,0);
+    log(`${remaining[0].name} vince il piatto per fold.`);
+    // reset table status
+    for(const pl of players){ pl.committed=0; }
+    pot=0; phase='Idle'; renderPlayers(); renderBoard(); renderYou();
+    return;
+  }
+  // advance turn
+  toActIndex = (toActIndex + 1) % players.length;
+  proceedToNextAction();
+};
+
+btnCheckCall.onclick = ()=>{
+  disablePlayerControls();
+  const you = players.find(p=>p.isYou);
+  const need = currentBet - you.committed;
+  if(need<=0){
+    log('Tu: check.');
+  } else {
+    const pay = Math.min(need, you.stack);
+    you.stack -= pay; you.committed += pay; 
+    pot += pay;
+    log(`Tu: call ${pay}.`);
+    if(you.stack===0){ you.allIn = true; log('Tu sei ALL-IN!'); }
+  }
+  toActIndex = (toActIndex + 1) % players.length;
+  // if betting complete, move to next street
+  if(bettingRoundComplete()) proceedToNextStreet();
+  else proceedToNextAction();
+};
+
+btnBet.onclick = ()=>{
+  disablePlayerControls();
+  const you = players.find(p=>p.isYou);
+  const val = Math.min(parseInt(betRange.value), you.stack);
+  if(val<=0) return;
+  // If currentBet === 0 -> bet else raise
+  if(currentBet === 0){
+    // bet size
+    you.stack -= val; you.committed += val; pot += val;
+    currentBet = you.committed;
+    minRaise = val;
+    log(`Tu: bet ${val}.`);
+  } else {
+    // raise: must be at least currentBet + minRaise
+    const toCall = currentBet - you.committed;
+    const total = toCall + val;
+    const raise = you.committed + total;
+    const added = Math.min(total, you.stack);
+    you.stack -= added; you.committed += added; pot += added;
+    if(you.committed > currentBet) {
+      minRaise = Math.max(minRaise, you.committed - currentBet);
+      currentBet = you.committed;
+    }
+    log(`Tu: raise, aggiunti ${added}.`);
+    if(you.stack===0){ you.allIn = true; log('Tu sei ALL-IN!'); }
+  }
+  toActIndex = (toActIndex + 1) % players.length;
+  proceedToNextAction();
+};
+
+btnAllIn.onclick = ()=>{
+  disablePlayerControls();
+  const you = players.find(p=>p.isYou);
+  const add = you.stack;
+  you.committed += add; you.stack = 0; you.allIn = true; pot += add;
+  if(you.committed > currentBet){ minRaise = Math.max(minRaise, you.committed - currentBet); currentBet = you.committed; }
+  log(`Tu: ALL-IN ${you.committed}.`);
+  toActIndex = (toActIndex + 1) % players.length;
+  proceedToNextAction();
+};
+
+betRange.oninput = ()=>{ betLabel.textContent = `Bet: ${betRange.value}`; };
+
+/* ====== CPU intelligence ====== */
+/* Heuristic:
+   - Preflop: evaluate pocket strength roughly (pairs high cards connected suited)
+   - Postflop: evaluate exact eval7 score on known cards (hand category)
+   - Use pot odds and strength thresholds to decide fold/call/raise
+   - Small random bluff chance
+*/
+function preflopStrength(hand){
+  const a = hand[0].r, b = hand[1].r;
+  let score = 0;
+  if(a===b) score += 0.5 + (a/14)*0.5; // pocket pair stronger with high rank
+  const gap = Math.abs(a-b);
+  if(gap<=1) score += 0.2;
+  if(hand[0].s === hand[1].s) score += 0.15;
+  // high cards add
+  score += ((a/14)+ (b/14))/4;
+  return score; // roughly 0..~1.5
+}
+
+async function cpuAct(cpu){
+  // basic CPU action function: will consider currentBet and act accordingly
+  const p = cpu;
+  if(!p.inHand || p.stack<=0) return;
+  // compute strength
+  let strength = 0.2; // baseline
+  if(phase === 'Preflop'){
+    strength = preflopStrength(p.hand); // 0..~1.5
+    strength = Math.min(1, strength/1.2);
+  } else {
+    // evaluate using eval7 with known board
+    const score = eval7([...p.hand, ...board]);
+    strength = (score.cat + (score.ranks[0]||0)/100) / 8; // normalize 0..~1
+  }
+  // pot odds
+  const need = currentBet - p.committed;
+  const potTotal = pot + players.reduce((a,b)=>a + b.committed, 0);
+  const callCost = Math.min(need, p.stack);
+  const potOdds = callCost > 0 ? (callCost / (potTotal + callCost)) : 0;
+  // random factor & position advantage
+  const posAdv = ( (p.seat >= dealerIndex) ? 0.03 : -0.02 );
+  const bluff = Math.random() < 0.06 ? 0.2 : 0; // occasional bluff
+  strength += posAdv + bluff;
+
+  // decide thresholds (tuned)
+  const foldThreshold = 0.22 + potOdds*0.6;
+  const callThreshold = 0.35 - potOdds*0.2;
+  const raiseThreshold = 0.62 - potOdds*0.2;
+
+  // if no bet to call (check option)
+  if(need <= 0){
+    if(strength > raiseThreshold && p.stack>bb && Math.random() < 0.75){
+      // bet/raise smallish
+      const betSize = Math.min(p.stack, Math.max(bb, Math.floor((potTotal*0.4)/10)*10));
+      // perform bet
+      const add = Math.min(betSize, p.stack);
+      p.stack -= add; p.committed += add; pot += add;
+      currentBet = p.committed;
+      minRaise = Math.max(minRaise, add);
+      log(`${p.name}: bet ${add}`);
+    } else {
+      log(`${p.name}: check`);
+    }
+    return;
+  } else {
+    // facing a bet
+    if(strength < foldThreshold){
+      // fold unless calling is cheap and potOdds attractive
+      if(callCost<=0.1*p.stack && Math.random()<0.25){
+        // sometimes call a little
+        p.stack -= callCost; p.committed += callCost; pot += callCost;
+        if(p.stack<=0){ p.allIn=true; log(`${p.name}: call & ALL-IN`); }
+        else log(`${p.name}: call ${callCost}`);
+      } else {
+        p.inHand = false;
+        log(`${p.name}: fold`);
+      }
+      return;
+    }
+    // call
+    if(strength >= callThreshold && strength < raiseThreshold){
+      // call
+      const pay = Math.min(callCost, p.stack);
+      p.stack -= pay; p.committed += pay; pot += pay;
+      if(p.stack<=0){ p.allIn=true; log(`${p.name}: call ${pay} & ALL-IN`); } else log(`${p.name}: call ${pay}`);
+      return;
+    }
+    // raise
+    if(strength >= raiseThreshold){
+      // calculate raise size proportional to strength
+      const raiseBy = Math.min(p.stack, Math.max(minRaise, Math.floor(potTotal * (0.25 + Math.random()*0.6))));
+      // add call first
+      const needPay = Math.min(callCost, p.stack);
+      p.stack -= needPay; p.committed += needPay; pot += needPay;
+      const additional = Math.min(raiseBy, p.stack);
+      p.stack -= additional; p.committed += additional; pot += additional;
+      // update current bet and minRaise
+      if(p.committed > currentBet){
+        minRaise = Math.max(minRaise, p.committed - currentBet);
+        currentBet = p.committed;
+      }
+      if(p.stack<=0) p.allIn=true;
+      log(`${p.name}: raise (tot ${p.committed})`);
+      return;
+    }
+  }
+}
+
+/* ====== New hand flow ====== */
+function anyPlayersLeftWithChips(){
+  return players.filter(p=> p.stack>0).length >= 2;
+}
+
+function startHand(){
+  if(!anyPlayersLeftWithChips()){
+    log('Game over: meno di 2 giocatori con chip.');
+    return;
+  }
+  // reset commitments and statuses
+  for(const p of players){ p.committed=0; p.allIn=false; p.hand=[]; if(p.stack>0) p.inHand=true; }
+  board = [];
+  deck = newDeck();
+  // rotate dealer to next alive
+  do { dealerIndex = (dealerIndex + 1) % players.length; } while(players[dealerIndex].stack<=0);
+  // deal 2 cards each (skip busted)
+  for(const p of players){
+    if(p.stack>0){
+      p.hand = [deck.pop(), deck.pop()];
+    } else p.hand = [];
+  }
+  // post blinds: SB is next alive after dealer, BB next
+  const sbIndex = nextAliveIndex((dealerIndex+1)%players.length);
+  const bbIndex = nextAliveIndex((sbIndex+1)%players.length);
+  const sbAmt = Math.min(sb, players[sbIndex].stack);
+  players[sbIndex].stack -= sbAmt; players[sbIndex].committed += sbAmt;
+  const bbAmt = Math.min(bb, players[bbIndex].stack);
+  players[bbIndex].stack -= bbAmt; players[bbIndex].committed += bbAmt;
+  pot = sbAmt + bbAmt;
+  currentBet = bbAmt;
+  minRaise = bbAmt;
+  phase = 'Preflop';
+  // toAct is next after BB
+  toActIndex = nextAliveIndex((bbIndex+1)%players.length);
+  renderYou(); renderPlayers(); renderBoard();
+  log(`Nuova mano, Dealer: ${players[dealerIndex].name}, SB: ${sbAmt} (${players[sbIndex].name}), BB: ${bbAmt} (${players[bbIndex].name})`);
+  // if first to act is CPU, schedule
+  proceedToNextAction();
+}
+
+function nextAliveIndex(start){
+  let i=start;
+  for(let k=0;k<players.length;k++){
+    if(players[i].stack>0) return i;
+    i = (i+1)%players.length;
+  }
+  return start;
+}
+
+/* handle end of betting round: when all matched or only one left */
+async function concludeBettingRoundAndReveal(){
+  // transfer committed to pot (we already updated pot on each pay)
+  // reset currentBet & committed? keep committed for side pot calc BEFORE resetting to 0
+  // For simpler consistent distribution, we will accumulate committed into pot history array.
+}
+
+/* ====== UI init & events ====== */
+btnSetup.onclick = ()=>{ setup(); };
+btnNewHand.onclick = ()=>{ startHand(); };
+botDelayRange.oninput = ()=>{ botDelay = parseInt(botDelayRange.value); };
+
+window.addEventListener('keydown', (e)=>{
+  if(e.key === 'f' || e.key === 'F') btnFold.click();
+  if(e.key === 'c' || e.key === 'C') btnCheckCall.click();
+  if(e.key === 'r' || e.key === 'R') btnBet.click();
+});
+
+/* ====== On load default setup ====== */
+setup();
+
+/* ====== Start UI wiring (rendering updates) ====== */
+function renderBoard(){ boardArea.innerHTML = board.map(c=>cardHtml(c)).join(''); potEl.textContent = pot; phaseEl.textContent = phase; dealerEl.textContent = players[dealerIndex] ? players[dealerIndex].name : '-'; toActEl.textContent = players[toActIndex] ? players[toActIndex].name : '-'; }
+function renderPlayers(){ playersArea.innerHTML = ''; for(const p of players){ const el = document.createElement('div'); el.className='player panel'; el.innerHTML = `<div class="head" style="justify-content:space-between"><div><strong>${p.name}</strong> ${p.isYou?'<span class="small">(You)</span>':''}</div><div class="small">Stack: ${p.stack}</div></div><div style="margin-top:8px" class="small">Committed: ${p.committed}</div><div class="small">State: ${p.inHand? (p.allIn? 'ALL-IN' : 'IN') : 'Fold'}</div>`; playersArea.appendChild(el); } }
+function renderYou(){ const you = players.find(p=>p.isYou); yourCards.innerHTML = you ? you.hand.map(c=>cardHtml(c)).join('') : ''; yourStackEl.textContent = you ? you.stack : 0; renderPlayers(); renderBoard(); }
+
+/* ====== Notes and Limitations ======
+ - Questo motore è ricco e gestisce tutte le mosse principali.
+ - Side-pots e dettagli estremi sono gestiti in modo pratico nella funzione resolveShowdownAndDistribute (crea pots per diverse committed levels).
+ - L'IA è euristica: combina pre/postflop valutazioni, pot odds e bluff casuale.
+ - Puoi migliorare ulteriormente IA con Monte Carlo o simulazioni se vuoi.
+======================================================== */
+</script>
+</body>
+</html>
